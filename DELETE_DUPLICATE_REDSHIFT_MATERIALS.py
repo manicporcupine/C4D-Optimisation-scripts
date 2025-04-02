@@ -7,12 +7,34 @@ import maxon
 
 RED_SHIFT_NODESPACE = "com.redshift3d.redshift4c4d.class.nodespace"
 
+def get_node_signature(node):
+    """
+    Builds a signature for a single node by taking its asset ID and appending
+    all immediate input port IDs and their effective values.
+    """
+    assetId_list = node.GetValue("net.maxon.node.attribute.assetid")
+    if not assetId_list:
+        return ""
+    assetId = assetId_list[0]
+    node_signature = str(assetId)
+    inputs = node.GetInputs()
+    if inputs:
+        # Iterate over immediate children (input ports)
+        for port in inputs.GetChildren():
+            # Use port's ID as its identifier because GetName() is not available
+            port_id = str(port.GetId())
+            try:
+                port_value = port.GetValue("effectivevalue")
+            except Exception:
+                port_value = "N/A"
+            node_signature += f"|{port_id}:{port_value}"
+    return node_signature
+
 def get_material_signature(material):
     """
-    Calculates a unique signature for the material based on its node graph.
-    For each node, it uses the asset ID, and for texture nodes (asset ID equal to 
-    "com.redshift3d.redshift4c4d.nodes.core.texturesampler") it also includes the 
-    value of the "path" port.
+    Calculates a unique signature for the material by concatenating the signatures
+    of all nodes in its node graph. The signature for each node includes its asset ID,
+    plus the IDs and effective values of its input ports.
     """
     nodeMat = material.GetNodeMaterialReference()
     if not nodeMat or not nodeMat.HasSpace(RED_SHIFT_NODESPACE):
@@ -21,27 +43,14 @@ def get_material_signature(material):
     if graph.IsNullValue():
         return None
     root = graph.GetViewRoot()
-    signature_elements = []
+    signatures = []
+    # Iterate over all inner nodes of the graph
     for node in root.GetInnerNodes(mask=maxon.NODE_KIND.NODE, includeThis=False):
-        assetId_list = node.GetValue("net.maxon.node.attribute.assetid")
-        if not assetId_list:
-            continue
-        assetId = assetId_list[0]
-        if assetId == maxon.Id("com.redshift3d.redshift4c4d.nodes.core.texturesampler"):
-            filenameInPort = node.GetInputs().FindChild("com.redshift3d.redshift4c4d.nodes.core.texturesampler.tex0")
-            if filenameInPort:
-                pathPort = filenameInPort.FindChild("path")
-                if pathPort:
-                    value = pathPort.GetValue("effectivevalue")
-                    signature_elements.append(f"{str(assetId)}:{value}")
-                else:
-                    signature_elements.append(str(assetId))
-            else:
-                signature_elements.append(str(assetId))
-        else:
-            signature_elements.append(str(assetId))
-    signature_elements.sort()
-    signature_str = "|".join(signature_elements)
+        sig = get_node_signature(node)
+        if sig:
+            signatures.append(sig)
+    signatures.sort()
+    signature_str = "|".join(signatures)
     return signature_str
 
 def get_all_objects(doc):
@@ -121,19 +130,21 @@ def main():
     
     c4d.EventAdd()
     
-    # 4. Deselect all materials in the document
+    # 4. Deselect all materials, then select duplicate materials and execute the delete command.
     allMaterials = doc.GetMaterials()
     for mat in allMaterials:
         mat.DelBit(c4d.BIT_ACTIVE)
     
-    # Select duplicate materials
     for dup in duplicates:
         dup.SetBit(c4d.BIT_ACTIVE)
-    # Execute the delete command (ID 300001024) in the Material Manager
     c4d.CallCommand(300001024)
     c4d.EventAdd()
     
     c4d.gui.MessageDialog(f"{len(duplicates)} duplicate materials have been removed.")
+
+if __name__=='__main__':
+    main()
+
 
 if __name__=='__main__':
     main()
