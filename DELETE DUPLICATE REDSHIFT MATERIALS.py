@@ -1,9 +1,19 @@
+# Author: Chat GPT and Dani Zaitcev
+# Tested with Cinema 4D 2025.2 and Redshift 2025.4
+
 import c4d
+import c4d.gui
 import maxon
 
 RED_SHIFT_NODESPACE = "com.redshift3d.redshift4c4d.class.nodespace"
 
 def get_material_signature(material):
+    """
+    Calculates a unique signature for the material based on its node graph.
+    For each node, it uses the asset ID, and for texture nodes (asset ID equal to 
+    "com.redshift3d.redshift4c4d.nodes.core.texturesampler") it also includes the 
+    value of the "path" port.
+    """
     nodeMat = material.GetNodeMaterialReference()
     if not nodeMat or not nodeMat.HasSpace(RED_SHIFT_NODESPACE):
         return None
@@ -35,6 +45,9 @@ def get_material_signature(material):
     return signature_str
 
 def get_all_objects(doc):
+    """
+    Recursively returns all objects in the document.
+    """
     obj = doc.GetFirstObject()
     while obj:
         yield obj
@@ -43,6 +56,9 @@ def get_all_objects(doc):
         obj = obj.GetNext()
 
 def get_all_children(obj):
+    """
+    Recursively returns all children of the given object.
+    """
     child = obj.GetDown()
     while child:
         yield child
@@ -55,7 +71,7 @@ def main():
     if doc is None:
         return
 
-    # 1. Собираем все материалы с Redshift узловым пространством
+    # 1. Collect all materials with Redshift node space
     materials = doc.GetMaterials()
     redshift_materials = []
     for mat in materials:
@@ -63,7 +79,7 @@ def main():
         if nodeMat and nodeMat.HasSpace(RED_SHIFT_NODESPACE):
             redshift_materials.append(mat)
     
-    # 2. Вычисляем сигнатуру каждого материала и определяем дубликаты
+    # 2. Calculate the signature for each material and determine duplicates
     sig_to_material = {}
     duplicates = []
     for mat in redshift_materials:
@@ -76,16 +92,16 @@ def main():
             sig_to_material[sig] = mat
     
     if not duplicates:
-        print("Дубликаты не найдены.")
+        print("No duplicates found.")
         return
     
-    print(f"Найдено {len(duplicates)} дубликатов.")
+    print(f"Found {len(duplicates)} duplicates.")
 
-    # 3. Получаем список всех объектов и вычисляем их количество
+    # 3. Get the list of all objects and determine their total count
     objects = list(get_all_objects(doc))
     total = len(objects)
     
-    # Обходим объекты и обновляем теги, отображая прогресс
+    # Iterate over objects and update texture tags while displaying progress
     for idx, obj in enumerate(objects):
         tag = obj.GetFirstTag()
         while tag:
@@ -96,20 +112,23 @@ def main():
                     if sig in sig_to_material:
                         uniqueMat = sig_to_material[sig]
                         tag[c4d.TEXTURETAG_MATERIAL] = uniqueMat
-                        print(f"Тег объекта '{obj.GetName()}' обновлён.")
+                        print(f"Tag on object '{obj.GetName()}' updated.")
             tag = tag.GetNext()
-        # Обновляем статус выполнения
+        # Update progress status
         percent = int((idx + 1) * 100.0 / total)
         c4d.StatusSetBar(percent)
-        c4d.StatusSetText(f"Обработка объекта {idx+1} из {total}")
+        c4d.StatusSetText(f"Processing object {idx+1} of {total}")
     
-    c4d.StatusClear()  # Очищаем статусную строку
+    c4d.StatusClear()  # Clear the status bar
 
-    # 4. Вызываем команду "Удалить неиспользуемые материалы" (ID 12168)
+    # 4. Call the command "Remove Unused Materials" (ID 12168)
     c4d.CallCommand(12168)
-    print("Удаление неиспользуемых материалов выполнено.")
+    print("Unused materials removal completed.")
     
     c4d.EventAdd()
+    
+    # 5. Show a dialog with the number of duplicate materials removed
+    c4d.gui.MessageDialog(f"{len(duplicates)} duplicate materials have been removed.")
 
 if __name__=='__main__':
     main()
