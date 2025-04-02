@@ -97,11 +97,10 @@ def main():
     
     print(f"Found {len(duplicates)} duplicates.")
 
-    # 3. Get the list of all objects and determine their total count
+    # 3. Get the list of all objects and update texture tags accordingly
     objects = list(get_all_objects(doc))
     total = len(objects)
     
-    # Iterate over objects and update texture tags while displaying progress
     for idx, obj in enumerate(objects):
         tag = obj.GetFirstTag()
         while tag:
@@ -118,16 +117,22 @@ def main():
         percent = int((idx + 1) * 100.0 / total)
         c4d.StatusSetBar(percent)
         c4d.StatusSetText(f"Processing object {idx+1} of {total}")
-    
-    c4d.StatusClear()  # Clear the status bar
-
-    # 4. Call the command "Remove Unused Materials" (ID 12168)
-    c4d.CallCommand(12168)
-    print("Unused materials removal completed.")
+    c4d.StatusClear()
     
     c4d.EventAdd()
     
-    # 5. Show a dialog with the number of duplicate materials removed
+    # 4. Deselect all materials in the document
+    allMaterials = doc.GetMaterials()
+    for mat in allMaterials:
+        mat.DelBit(c4d.BIT_ACTIVE)
+    
+    # Select duplicate materials
+    for dup in duplicates:
+        dup.SetBit(c4d.BIT_ACTIVE)
+    # Execute the delete command (ID 300001024) in the Material Manager
+    c4d.CallCommand(300001024)
+    c4d.EventAdd()
+    
     c4d.gui.MessageDialog(f"{len(duplicates)} duplicate materials have been removed.")
 
 if __name__=='__main__':
