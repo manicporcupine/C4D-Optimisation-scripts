@@ -4,37 +4,34 @@
 import c4d
 import c4d.gui
 import maxon
+import json
+import hashlib
 
 RED_SHIFT_NODESPACE = "com.redshift3d.redshift4c4d.class.nodespace"
 
-def get_node_signature(node):
+def normalize_value(value):
     """
-    Builds a signature for a single node by taking its asset ID and appending
-    all immediate input port IDs and their effective values.
+    Converts the value to a string. If it can be interpreted as a float, rounds it to 4 decimals.
+    Otherwise, returns str(value). Handles None values as well.
     """
-    assetId_list = node.GetValue("net.maxon.node.attribute.assetid")
-    if not assetId_list:
-        return ""
-    assetId = assetId_list[0]
-    node_signature = str(assetId)
-    inputs = node.GetInputs()
-    if inputs:
-        # Iterate over immediate children (input ports)
-        for port in inputs.GetChildren():
-            # Use port's ID as its identifier because GetName() is not available
-            port_id = str(port.GetId())
-            try:
-                port_value = port.GetValue("effectivevalue")
-            except Exception:
-                port_value = "N/A"
-            node_signature += f"|{port_id}:{port_value}"
-    return node_signature
+    if value is None:
+        return "None"
+    try:
+        f = float(value)
+        return f"{f:.4f}"
+    except Exception:
+        # If value is a maxon.ColorA, format it accordingly
+        if isinstance(value, maxon.ColorA):
+            return f"ColorA({value.r:.4f},{value.g:.4f},{value.b:.4f},{value.a:.4f})"
+        return str(value)
 
-def get_material_signature(material):
+def get_normalized_material_data(material):
     """
-    Calculates a unique signature for the material by concatenating the signatures
-    of all nodes in its node graph. The signature for each node includes its asset ID,
-    plus the IDs and effective values of its input ports.
+    Collects node data from the material in a normalized dictionary.
+    Each node dictionary contains:
+      - "asset_id": the node's asset ID
+      - "ports": a dictionary mapping each port's identifier (using its ID) to its normalized effective value.
+    The list of nodes is sorted by asset_id, and each node's ports dictionary is also sorted.
     """
     nodeMat = material.GetNodeMaterialReference()
     if not nodeMat or not nodeMat.HasSpace(RED_SHIFT_NODESPACE):
@@ -43,15 +40,39 @@ def get_material_signature(material):
     if graph.IsNullValue():
         return None
     root = graph.GetViewRoot()
-    signatures = []
-    # Iterate over all inner nodes of the graph
+    nodes = []
     for node in root.GetInnerNodes(mask=maxon.NODE_KIND.NODE, includeThis=False):
-        sig = get_node_signature(node)
-        if sig:
-            signatures.append(sig)
-    signatures.sort()
-    signature_str = "|".join(signatures)
-    return signature_str
+        assetId_list = node.GetValue("net.maxon.node.attribute.assetid")
+        if not assetId_list:
+            continue
+        node_data = {"asset_id": str(assetId_list[0]), "ports": {}}
+        inputs = node.GetInputs()
+        if inputs:
+            for port in inputs.GetChildren():
+                try:
+                    val = port.GetValue("effectivevalue")
+                except Exception:
+                    val = "N/A"
+                node_data["ports"][str(port.GetId())] = normalize_value(val)
+        # Sort the ports dictionary by key to ensure determinism.
+        node_data["ports"] = dict(sorted(node_data["ports"].items()))
+        nodes.append(node_data)
+    # Sort the list of nodes by asset_id.
+    nodes = sorted(nodes, key=lambda n: n["asset_id"])
+    return nodes
+
+def get_normalized_material_signature(material):
+    """
+    Generates a robust signature for the material by converting its normalized node data
+    to a JSON string (with sorted keys) and then hashing that string using SHA256.
+    Returns a tuple of (signature_hash, nodes_json).
+    """
+    nodes = get_normalized_material_data(material)
+    if nodes is None:
+        return None, None
+    nodes_json = json.dumps(nodes, sort_keys=True)
+    signature_hash = hashlib.sha256(nodes_json.encode('utf-8')).hexdigest()
+    return signature_hash, nodes_json
 
 def get_all_objects(doc):
     """
@@ -88,55 +109,57 @@ def main():
         if nodeMat and nodeMat.HasSpace(RED_SHIFT_NODESPACE):
             redshift_materials.append(mat)
     
-    # 2. Calculate the signature for each material and determine duplicates
+    # 2. Calculate the normalized signature for each material and determine duplicates
     sig_to_material = {}
     duplicates = []
+    print("=== Debug: Normalized Material Data ===")
     for mat in redshift_materials:
-        sig = get_material_signature(mat)
-        if sig is None:
-            continue
+        sig, nodes_json = get_normalized_material_signature(mat)
+        print("Material:", mat.GetName())
+        print("Signature:", sig)
+        print("Normalized Data:", nodes_json)
+        print("-----")
         if sig in sig_to_material:
             duplicates.append(mat)
         else:
             sig_to_material[sig] = mat
     
     if not duplicates:
-        print("No duplicates found.")
+        c4d.gui.MessageDialog("No duplicates found.")
         return
     
-    print(f"Found {len(duplicates)} duplicates.")
+    print(f"Found {len(duplicates)} duplicates out of {len(redshift_materials)} materials.")
 
-    # 3. Get the list of all objects and update texture tags accordingly
+    # 3. Update texture tags on objects: for each object, if a tag uses a duplicate material,
+    # replace it with the unique material (based on matching signature).
     objects = list(get_all_objects(doc))
     total = len(objects)
-    
     for idx, obj in enumerate(objects):
         tag = obj.GetFirstTag()
         while tag:
             if tag.CheckType(c4d.Ttexture):
                 currentMat = tag[c4d.TEXTURETAG_MATERIAL]
                 if currentMat in duplicates:
-                    sig = get_material_signature(currentMat)
+                    sig, _ = get_normalized_material_signature(currentMat)
                     if sig in sig_to_material:
                         uniqueMat = sig_to_material[sig]
                         tag[c4d.TEXTURETAG_MATERIAL] = uniqueMat
                         print(f"Tag on object '{obj.GetName()}' updated.")
             tag = tag.GetNext()
-        # Update progress status
         percent = int((idx + 1) * 100.0 / total)
         c4d.StatusSetBar(percent)
         c4d.StatusSetText(f"Processing object {idx+1} of {total}")
     c4d.StatusClear()
-    
     c4d.EventAdd()
     
-    # 4. Deselect all materials, then select duplicate materials and execute the delete command.
+    # 4. Deselect all materials in the document
     allMaterials = doc.GetMaterials()
     for mat in allMaterials:
         mat.DelBit(c4d.BIT_ACTIVE)
-    
+    # Then select duplicate materials
     for dup in duplicates:
         dup.SetBit(c4d.BIT_ACTIVE)
+    # Execute the delete command (ID 300001024) in the Material Manager
     c4d.CallCommand(300001024)
     c4d.EventAdd()
     
@@ -144,3 +167,4 @@ def main():
 
 if __name__=='__main__':
     main()
+
