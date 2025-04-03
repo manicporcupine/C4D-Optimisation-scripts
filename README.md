@@ -80,22 +80,7 @@ Similar to the same 3ds Max function, when an instance is selected, this script 
     
 Opens a dialog that allows you to first set a parent object, then move (or “put”) selected objects under that parent while preserving their world coordinates.
 
-Installation
-Clone or Download:
-Clone this repository or download it as a ZIP file.
 
-Copy Scripts:
-Place the script files into your Cinema 4D library/scripts folder.
-
-Restart Cinema 4D:
-Restart Cinema 4D or refresh the Script Manager to load the new scripts.
-
-Usage
-Open the Script Manager in Cinema 4D.
-
-Run the desired script.
-
-Follow on-screen instructions, dialogs, or check the console for feedback.
 
 Requirements
 Cinema 4D: Scripts have been tested with Cinema 4D 2025.x.
@@ -104,12 +89,5 @@ Redshift: Relevant scripts have been tested with Redshift 2025.x.
 
 Some scripts are intended for specific workflows (e.g., cleaning up imported STEP files or preparing scenes for export).
 
-Contributing
-Contributions, bug reports, and suggestions are welcome. Please open an issue or submit a pull request with improvements or additional scripts.
-
-License
-This project is licensed under the MIT License.
-
-Disclaimer
 These scripts were developed with assistance from ChatGPT and are provided "as is" without any warranty. Use them at your own risk.
 
