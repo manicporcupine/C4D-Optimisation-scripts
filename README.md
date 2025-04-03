@@ -7,6 +7,7 @@ Delete_all_hidden_objects.py: Removes hidden objects to ensure that exported sce
 Delete_ins-ces_inside_other_inst-ces.py: Deletes instances that are nested inside other instances, which is particularly useful when cleaning up imported STEP files.
 
 Scripts
+
 1. Convert all same obj to instances.py
    
 Replaces duplicate polygon objects with instances of the first found object sharing the same geometry. The script computes a geometry hash based on the object's points and polygons and replaces duplicates with instance objects.
@@ -41,11 +42,11 @@ Removes orphan Redshift instance objects (instances that have no valid reference
 
 9. MOVE ON TOP.py
     
-Moves the selected objects to the top of the object hierarchy (making them top-level objects) while preserving their world transforms.
+Moves the selected objects to the top of the object manager while preserving their world transforms (if they were in a null).
 
 10. MOVE TO BOTTOM.py
     
-Moves the selected objects to the bottom of the object hierarchy, preserving order and world transforms.
+Moves the selected objects to the bottom of the object manager, preserving their world transforms (if they were in a null).
 
 11. Delete_ins-ces_inside_other_inst-ces.py
     
@@ -65,15 +66,15 @@ Like in 3dsMax, selects the currently active camera (as determined by the active
 
 15. Select parent.py
     
-For the currently selected objects, selects their parent objects. If multiple objects share the same parent, only unique parents are selected.
+For the currently selected objects, selects their parent objects. If multiple objects share the same parent, only unique parents are selected. I feel a bit stupid, because it has to be a built-in function, but I didn't found it.
 
 16. Select_all_instances_of_an_active_object.py
     
-Selects all instance objects in the scene that reference the currently active object. Useful for quickly gathering all instances of a particular object.
+Similar to a 3ds Max, selects all instance objects in the scene that reference the currently active object. Useful for quickly gathering all instances of a particular object.
 
 17. Select_same_instances_v1.py
     
-When an instance is selected, this script selects all other instances that reference the same source object.
+Similar to the same 3ds Max function, when an instance is selected, this script selects all other instances that reference the same source object.
 
 18. Set Parent & Put into.py
     
