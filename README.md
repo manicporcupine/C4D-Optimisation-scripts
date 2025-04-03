@@ -8,57 +8,75 @@ Delete_ins-ces_inside_other_inst-ces.py: Deletes instances that are nested insid
 
 Scripts
 1. Convert all same obj to instances.py
+   
 Replaces duplicate polygon objects with instances of the first found object sharing the same geometry. The script computes a geometry hash based on the object's points and polygons and replaces duplicates with instance objects.
 
 2. Convert same obj as sel to instances.py
+   
 Replaces all polygon objects that are identical to the currently selected object with an instance of that object. The script preserves local transformations.
 
 3. DELETE DUPLICATE REDSHIFT MATERIALS.py
+   
 Detects duplicate Redshift materials by analyzing their node graph signatures (using a normalized JSON representation and SHA256 hash). It updates texture tags to point to the unique material and then deletes duplicates.
 
 4. Delete_all_hidden_objects.py
+   
 Recursively searches for objects hidden in the viewport or renderer and deletes them. This is useful for exporting a final scene to another application without unwanted hidden geometry.
 
 5. Delete_empty_material_tags.py
+    
 Deletes empty material (texture) tags from objects in the scene to clean up unused tags.
 
 6. Delete_empty_nulls.py
+    
 Recursively deletes empty null objects (nulls with no children) to reduce scene clutter.
 
 7. Delete_material_tag_from_selected_objects.py
+    
 Deletes all material tags from the currently selected objects.
 
 8. Delete_red_instances.py
+    
 Removes orphan Redshift instance objects (instances that have no valid reference) from the scene.
 
 9. MOVE ON TOP.py
+    
 Moves the selected objects to the top of the object hierarchy (making them top-level objects) while preserving their world transforms.
 
 10. MOVE TO BOTTOM.py
+    
 Moves the selected objects to the bottom of the object hierarchy, preserving order and world transforms.
 
 11. Delete_ins-ces_inside_other_inst-ces.py
+    
 Recursively finds and deletes instance objects that are nested inside other instance objects. This is particularly useful for cleaning up imported STEP files where multiple instance layers can cause issues.
 
 12. Quick Rename.py
+    
 Opens a dialog that allows you to quickly rename selected objects by adding a prefix, postfix, or by assigning numbered names. Quicker than a built-in tool.
 
 13. Rename Instance as reference.py
+    
 For selected instance objects, renames them based on the name of their reference object, appending “_Instance” to the reference’s name.
 
 14. Select active camera.py
+    
 Like in 3dsMax, selects the currently active camera (as determined by the active viewport) in the scene. 
 
 15. Select parent.py
+    
 For the currently selected objects, selects their parent objects. If multiple objects share the same parent, only unique parents are selected.
 
 16. Select_all_instances_of_an_active_object.py
+    
 Selects all instance objects in the scene that reference the currently active object. Useful for quickly gathering all instances of a particular object.
 
 17. Select_same_instances_v1.py
+    
 When an instance is selected, this script selects all other instances that reference the same source object.
 
 18. Set Parent & Put into.py
+    
 Opens a dialog that allows you to first set a parent object, then move (or “put”) selected objects under that parent while preserving their world coordinates.
 
 Installation
