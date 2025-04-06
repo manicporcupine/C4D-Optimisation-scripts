@@ -5,40 +5,53 @@
 import c4d
 
 def get_all_objects(obj, obj_list):
-    """ Рекурсивно собирает все объекты сцены """
+    """Recursively collects all objects in the scene."""
     while obj:
         obj_list.append(obj)
         get_all_objects(obj.GetDown(), obj_list)
         obj = obj.GetNext()
 
 def objects_are_identical(obj1, obj2):
-    """ Проверяет, совпадают ли два полигональных объекта (без учета положения, поворота и масштаба) """
+    """Checks if two polygonal objects are identical (ignoring position, rotation, and scale)."""
     if obj1.GetPolygonCount() != obj2.GetPolygonCount():
         return False
     if obj1.GetPointCount() != obj2.GetPointCount():
         return False
 
-    # Проверяем совпадение геометрии (точек и полигонов)
+    # Check if the geometry (points and polygons) matches
     points1 = [obj1.GetPoint(i) for i in range(obj1.GetPointCount())]
     points2 = [obj2.GetPoint(i) for i in range(obj2.GetPointCount())]
 
     return set(points1) == set(points2)
 
 def replace_with_instance(doc, original, duplicates):
-    """ Заменяет все дубликаты инстансами оригинала с сохранением локальных трансформаций """
+    """
+    Replaces all duplicates with instances of the original,
+    preserving local transformations and copying material tags.
+    """
     for obj in duplicates:
         instance = c4d.BaseObject(c4d.Oinstance)
         instance.SetName(obj.GetName() + "_Instance")
         instance[c4d.INSTANCEOBJECT_LINK] = original
 
-        # Учитываем локальную матрицу объекта относительно родителя
+        # Preserve local transformation relative to parent
         parent = obj.GetUp()
         if parent:
-            instance.SetMl(obj.GetMl())  # Сохраняем локальную трансформацию
+            instance.SetMl(obj.GetMl())  # Use local transformation
         else:
-            instance.SetMg(obj.GetMg())  # Если нет родителя, используем мировую трансформацию
+            instance.SetMg(obj.GetMg())  # Use global transformation if no parent
 
+        # Insert the instance in the same hierarchy at the same position
         doc.InsertObject(instance, parent=parent, pred=obj)
+
+        # Copy material (texture) tags from the duplicate to the instance
+        tag = obj.GetFirstTag()
+        while tag:
+            if tag.CheckType(c4d.Ttexture):
+                new_tag = tag.GetClone()
+                instance.InsertTag(new_tag)
+            tag = tag.GetNext()
+
         doc.AddUndo(c4d.UNDOTYPE_NEW, instance)
         doc.AddUndo(c4d.UNDOTYPE_DELETE, obj)
         obj.Remove()
@@ -50,12 +63,12 @@ def main():
 
     selected = doc.GetActiveObject()
     if not selected or not selected.CheckType(c4d.Opolygon):
-        c4d.gui.MessageDialog("Выберите полигональный объект.")
+        c4d.gui.MessageDialog("Please select a polygonal object.")
         return
 
     doc.StartUndo()
 
-    # Получаем все объекты сцены
+    # Collect all objects in the scene
     all_objects = []
     get_all_objects(doc.GetFirstObject(), all_objects)
 
@@ -63,9 +76,9 @@ def main():
 
     if duplicates:
         replace_with_instance(doc, selected, duplicates)
-        c4d.gui.MessageDialog(f"Найдено и заменено {len(duplicates)} объектов.")
+        c4d.gui.MessageDialog(f"Found and replaced {len(duplicates)} objects.")
     else:
-        c4d.gui.MessageDialog("Не найдено идентичных объектов.")
+        c4d.gui.MessageDialog("No identical objects found.")
 
     doc.EndUndo()
     c4d.EventAdd()
