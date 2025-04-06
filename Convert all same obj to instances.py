@@ -38,6 +38,7 @@ def replace_with_instances(doc, objects):
     """
     Replaces duplicate polygon objects with instances of the first encountered object.
     Ensures that each new instance preserves its world coordinates and remains in the same hierarchy.
+    Material (texture) tags from the duplicate object are copied to the new instance.
     """
     doc.StartUndo()
     seen_hashes = {}  # Dictionary to store unique objects by their geometry hash
@@ -54,17 +55,25 @@ def replace_with_instances(doc, objects):
             instance.SetName(seen_hashes[obj_hash].GetName() + "_instance")
             parent = obj.GetUp()
 
-            # Preserve world coordinates:
-            # If there's a parent, compute the local matrix relative to the parent's global matrix.
+            # Preserve world coordinates even if inside a parent (e.g. a null)
             if parent:
                 inv_parent_mg = ~parent.GetMg()  # Inverse of parent's global matrix
-                local_m = inv_parent_mg * obj.GetMg()  # Local matrix: parent's inverse * object's global matrix
+                local_m = inv_parent_mg * obj.GetMg()  # Compute local matrix relative to parent
                 instance.SetMl(local_m)
             else:
                 instance.SetMg(obj.GetMg())
 
-            # Insert the instance into the same hierarchy, at the same position as the original duplicate.
+            # Insert the instance into the same hierarchy at the same position
             doc.InsertObject(instance, parent=parent, pred=obj)
+
+            # Copy material (texture) tags from the duplicate object to the new instance
+            tag = obj.GetFirstTag()
+            while tag:
+                if tag.CheckType(c4d.Ttexture):
+                    new_tag = tag.GetClone()
+                    instance.InsertTag(new_tag)
+                tag = tag.GetNext()
+
             doc.AddUndo(c4d.UNDOTYPE_NEW, instance)
             doc.AddUndo(c4d.UNDOTYPE_DELETE, obj)
             obj.Remove()  # Remove the original duplicate object
@@ -82,7 +91,7 @@ def main():
     # Clear any active selection from the scene.
     clear_selection(doc)
 
-    # Recursively gather all objects in the scene (including those nested inside nulls).
+    # Recursively gather all objects in the scene, including those nested inside nulls.
     objects = []
     get_all_objects(doc.GetFirstObject(), objects)
     polygon_objects = [obj for obj in objects if obj.CheckType(c4d.Opolygon)]
