@@ -2,6 +2,7 @@
 # Tested with Cinema 4D 2025.2 and Redshift 2025.4
 
 import c4d
+from c4d import gui
 
 def get_all_objects(obj, obj_list):
     """Recursively collects all objects in the scene."""
@@ -10,77 +11,139 @@ def get_all_objects(obj, obj_list):
         get_all_objects(obj.GetDown(), obj_list)
         obj = obj.GetNext()
 
-def objects_are_identical(obj1, obj2):
-    """Checks if two polygonal objects are identical (ignoring position, rotation, and scale)."""
-    if obj1.GetPolygonCount() != obj2.GetPolygonCount():
-        return False
-    if obj1.GetPointCount() != obj2.GetPointCount():
-        return False
+def clear_selection(doc):
+    """Clears the active selection flag from all objects."""
+    all_objs = []
+    get_all_objects(doc.GetFirstObject(), all_objs)
+    for obj in all_objs:
+        obj.DelBit(c4d.BIT_ACTIVE)
 
-    # Check if the geometry (points and polygons) matches
-    points1 = [obj1.GetPoint(i) for i in range(obj1.GetPointCount())]
-    points2 = [obj2.GetPoint(i) for i in range(obj2.GetPointCount())]
-
-    return set(points1) == set(points2)
-
-def replace_with_instance(doc, original, duplicates):
+def get_polygons_hash(obj):
     """
-    Replaces all duplicates with instances of the original,
-    preserving local transformations and copying material tags.
+    Generates a hash for a polygonal object (considering only its geometry,
+    ignoring position, rotation, and scale).
     """
-    for obj in duplicates:
-        instance = c4d.BaseObject(c4d.Oinstance)
-        instance.SetName(obj.GetName() + "_Instance")
-        instance[c4d.INSTANCEOBJECT_LINK] = original
+    if not obj or not obj.CheckType(c4d.Opolygon):
+        return None
 
-        # Preserve local transformation relative to parent
-        parent = obj.GetUp()
-        if parent:
-            instance.SetMl(obj.GetMl())  # Use local transformation
+    points = obj.GetAllPoints()
+    polys = obj.GetAllPolygons()
+
+    sorted_points = sorted(points, key=lambda v: (round(v.x, 4), round(v.y, 4), round(v.z, 4)))
+    sorted_polys = sorted(polys, key=lambda p: (p.a, p.b, p.c, p.d))
+
+    hash_data = tuple((p.x, p.y, p.z) for p in sorted_points) + tuple((p.a, p.b, p.c, p.d) for p in sorted_polys)
+    return hash(hash_data)
+
+def get_master_polygon(obj):
+    """
+    Traces an object's INSTANCEOBJECT_LINK chain until a polygon object is reached.
+    Returns that polygon master (or None if not found).
+    """
+    while obj and not obj.CheckType(c4d.Opolygon):
+        if obj.CheckType(c4d.Oinstance):
+            obj = obj[c4d.INSTANCEOBJECT_LINK]
         else:
-            instance.SetMg(obj.GetMg())  # Use global transformation if no parent
+            break
+    return obj
 
-        # Insert the instance in the same hierarchy at the same position
-        doc.InsertObject(instance, parent=parent, pred=obj)
+def replace_with_instances(doc, objects):
+    """
+    Phase A: For polygon objects, record the first encountered master for each unique geometry.
+    For instance objects, trace their reference to a polygon master and update their link
+    to point to the unique master.
+    Then, update the names of all visible instances to "mastername_instance".
+    
+    Phase B: For each duplicate polygon (a polygon that has the same geometry as a master),
+    create a new instance referencing the master, copy texture tags, insert it in the same hierarchy,
+    and remove the duplicate.
+    """
+    doc.StartUndo()
+    seen_hashes = {}  # Map: geometry hash -> master polygon object
+    duplicate_polys = []  # List of duplicate polygon objects.
+    inst_objs = []  # List to store all instance objects.
 
-        # Copy material (texture) tags from the duplicate to the instance
-        tag = obj.GetFirstTag()
+    # Process objects in scene order.
+    for obj in objects:
+        if obj.CheckType(c4d.Opolygon):
+            h = get_polygons_hash(obj)
+            if h is None:
+                continue
+            if h in seen_hashes:
+                duplicate_polys.append(obj)
+            else:
+                seen_hashes[h] = obj
+        elif obj.CheckType(c4d.Oinstance):
+            inst_objs.append(obj)
+            # For instance objects, trace to get the ultimate polygon master.
+            ref = obj[c4d.INSTANCEOBJECT_LINK]
+            master = get_master_polygon(ref)
+            if master is None:
+                continue
+            h = get_polygons_hash(master)
+            if h is None:
+                continue
+            if h in seen_hashes:
+                new_master = seen_hashes[h]
+                if obj[c4d.INSTANCEOBJECT_LINK] != new_master:
+                    doc.AddUndo(c4d.UNDOTYPE_CHANGE, obj)
+                    obj[c4d.INSTANCEOBJECT_LINK] = new_master
+            else:
+                seen_hashes[h] = master
+
+    # Update names of all instance objects.
+    for inst in inst_objs:
+        master = get_master_polygon(inst[c4d.INSTANCEOBJECT_LINK])
+        if master:
+            new_name = master.GetName() + "_instance"
+            doc.AddUndo(c4d.UNDOTYPE_CHANGE, inst)
+            inst.SetName(new_name)
+
+    # Phase B: Replace duplicate polygon objects.
+    for dup in duplicate_polys:
+        h = get_polygons_hash(dup)
+        if h is None or h not in seen_hashes:
+            continue
+        master = seen_hashes[h]
+        instance = c4d.BaseObject(c4d.Oinstance)
+        instance[c4d.INSTANCEOBJECT_LINK] = master
+        instance.SetName(master.GetName() + "_instance")
+        parent = dup.GetUp()
+        if parent:
+            inv_parent_mg = ~parent.GetMg()
+            local_m = inv_parent_mg * dup.GetMg()
+            instance.SetMl(local_m)
+        else:
+            instance.SetMg(dup.GetMg())
+        doc.InsertObject(instance, parent=parent, pred=dup)
+        # Copy texture tags.
+        tag = dup.GetFirstTag()
         while tag:
             if tag.CheckType(c4d.Ttexture):
                 new_tag = tag.GetClone()
                 instance.InsertTag(new_tag)
             tag = tag.GetNext()
-
         doc.AddUndo(c4d.UNDOTYPE_NEW, instance)
-        doc.AddUndo(c4d.UNDOTYPE_DELETE, obj)
-        obj.Remove()
+        doc.AddUndo(c4d.UNDOTYPE_DELETE, dup)
+        dup.Remove()
+
+    doc.EndUndo()
+    c4d.EventAdd()
 
 def main():
     doc = c4d.documents.GetActiveDocument()
     if not doc:
+        gui.MessageDialog("No active document found.")
         return
 
-    selected = doc.GetActiveObject()
-    if not selected or not selected.CheckType(c4d.Opolygon):
-        c4d.gui.MessageDialog("Please select a polygonal object.")
+    clear_selection(doc)
+    objects = []
+    get_all_objects(doc.GetFirstObject(), objects)
+    if not objects:
+        gui.MessageDialog("No objects found.")
         return
 
-    doc.StartUndo()
-
-    # Collect all objects in the scene
-    all_objects = []
-    get_all_objects(doc.GetFirstObject(), all_objects)
-
-    duplicates = [obj for obj in all_objects if obj != selected and obj.CheckType(c4d.Opolygon) and objects_are_identical(selected, obj)]
-
-    if duplicates:
-        replace_with_instance(doc, selected, duplicates)
-        c4d.gui.MessageDialog(f"Found and replaced {len(duplicates)} objects.")
-    else:
-        c4d.gui.MessageDialog("No identical objects found.")
-
-    doc.EndUndo()
-    c4d.EventAdd()
+    replace_with_instances(doc, objects)
 
 if __name__ == "__main__":
     main()
