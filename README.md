@@ -18,7 +18,7 @@ Replaces all polygon objects that are identical to the currently selected object
 
 3. DELETE DUPLICATE REDSHIFT MATERIALS.py
    
-Detects duplicate Redshift materials by analyzing their node graph signatures (using a normalized JSON representation and SHA256 hash). It updates texture tags to point to the unique material and then deletes duplicates.
+Detects duplicate Redshift materials by analyzing their node graph signatures (using a normalized JSON representation and SHA256 hash). It updates texture tags to point to the unique material and then deletes duplicates. Didn't tested a lot, but should work with RS Open PBR mats without issues.
 
 4. Delete_all_hidden_objects.py
    
