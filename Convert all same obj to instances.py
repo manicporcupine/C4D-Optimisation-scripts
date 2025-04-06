@@ -10,97 +10,77 @@ def get_all_objects(obj, obj_list):
         get_all_objects(obj.GetDown(), obj_list)
         obj = obj.GetNext()
 
-def clear_selection(doc):
-    """Clears the active selection flag from all objects."""
-    all_objs = []
-    get_all_objects(doc.GetFirstObject(), all_objs)
-    for obj in all_objs:
-        obj.DelBit(c4d.BIT_ACTIVE)
+def objects_are_identical(obj1, obj2):
+    """Checks if two polygonal objects are identical (ignoring position, rotation, and scale)."""
+    if obj1.GetPolygonCount() != obj2.GetPolygonCount():
+        return False
+    if obj1.GetPointCount() != obj2.GetPointCount():
+        return False
 
-def get_polygons_hash(obj):
-    """Generates a hash for a polygonal object (considering only its geometry, without position, rotation, and scale)."""
-    if not obj or not obj.CheckType(c4d.Opolygon):
-        return None
+    # Check if the geometry (points and polygons) matches
+    points1 = [obj1.GetPoint(i) for i in range(obj1.GetPointCount())]
+    points2 = [obj2.GetPoint(i) for i in range(obj2.GetPointCount())]
 
-    # Get points in local coordinates (without world matrix)
-    points = obj.GetAllPoints()
-    polys = obj.GetAllPolygons()
+    return set(points1) == set(points2)
 
-    # Normalize the order of points to avoid influence from vertex order
-    sorted_points = sorted(points, key=lambda v: (round(v.x, 4), round(v.y, 4), round(v.z, 4)))
-    sorted_polys = sorted(polys, key=lambda p: (p.a, p.b, p.c, p.d))
-
-    # Create a unique hash from the sorted geometry data
-    hash_data = tuple((p.x, p.y, p.z) for p in sorted_points) + tuple((p.a, p.b, p.c, p.d) for p in sorted_polys)
-    return hash(hash_data)
-
-def replace_with_instances(doc, objects):
+def replace_with_instance(doc, original, duplicates):
     """
-    Replaces duplicate polygon objects with instances of the first encountered object.
-    Ensures that each new instance preserves its world coordinates and remains in the same hierarchy.
-    Material (texture) tags from the duplicate object are copied to the new instance.
+    Replaces all duplicates with instances of the original,
+    preserving local transformations and copying material tags.
     """
-    doc.StartUndo()
-    seen_hashes = {}  # Dictionary to store unique objects by their geometry hash
+    for obj in duplicates:
+        instance = c4d.BaseObject(c4d.Oinstance)
+        instance.SetName(obj.GetName() + "_Instance")
+        instance[c4d.INSTANCEOBJECT_LINK] = original
 
-    for obj in objects:
-        obj_hash = get_polygons_hash(obj)
-        if obj_hash is None:
-            continue
-
-        if obj_hash in seen_hashes:
-            # Create an instance of the first found object with the same hash
-            instance = c4d.BaseObject(c4d.Oinstance)
-            instance[c4d.INSTANCEOBJECT_LINK] = seen_hashes[obj_hash]
-            instance.SetName(seen_hashes[obj_hash].GetName() + "_instance")
-            parent = obj.GetUp()
-
-            # Preserve world coordinates even if inside a parent (e.g. a null)
-            if parent:
-                inv_parent_mg = ~parent.GetMg()  # Inverse of parent's global matrix
-                local_m = inv_parent_mg * obj.GetMg()  # Compute local matrix relative to parent
-                instance.SetMl(local_m)
-            else:
-                instance.SetMg(obj.GetMg())
-
-            # Insert the instance into the same hierarchy at the same position
-            doc.InsertObject(instance, parent=parent, pred=obj)
-
-            # Copy material (texture) tags from the duplicate object to the new instance
-            tag = obj.GetFirstTag()
-            while tag:
-                if tag.CheckType(c4d.Ttexture):
-                    new_tag = tag.GetClone()
-                    instance.InsertTag(new_tag)
-                tag = tag.GetNext()
-
-            doc.AddUndo(c4d.UNDOTYPE_NEW, instance)
-            doc.AddUndo(c4d.UNDOTYPE_DELETE, obj)
-            obj.Remove()  # Remove the original duplicate object
+        # Preserve local transformation relative to parent
+        parent = obj.GetUp()
+        if parent:
+            instance.SetMl(obj.GetMl())  # Use local transformation
         else:
-            seen_hashes[obj_hash] = obj  # Remember the original object
+            instance.SetMg(obj.GetMg())  # Use global transformation if no parent
 
-    doc.EndUndo()
-    c4d.EventAdd()
+        # Insert the instance in the same hierarchy at the same position
+        doc.InsertObject(instance, parent=parent, pred=obj)
+
+        # Copy material (texture) tags from the duplicate to the instance
+        tag = obj.GetFirstTag()
+        while tag:
+            if tag.CheckType(c4d.Ttexture):
+                new_tag = tag.GetClone()
+                instance.InsertTag(new_tag)
+            tag = tag.GetNext()
+
+        doc.AddUndo(c4d.UNDOTYPE_NEW, instance)
+        doc.AddUndo(c4d.UNDOTYPE_DELETE, obj)
+        obj.Remove()
 
 def main():
     doc = c4d.documents.GetActiveDocument()
     if not doc:
         return
 
-    # Clear any active selection from the scene.
-    clear_selection(doc)
-
-    # Recursively gather all objects in the scene, including those nested inside nulls.
-    objects = []
-    get_all_objects(doc.GetFirstObject(), objects)
-    polygon_objects = [obj for obj in objects if obj.CheckType(c4d.Opolygon)]
-
-    if not polygon_objects:
-        c4d.gui.MessageDialog("No polygonal objects found.")
+    selected = doc.GetActiveObject()
+    if not selected or not selected.CheckType(c4d.Opolygon):
+        c4d.gui.MessageDialog("Please select a polygonal object.")
         return
 
-    replace_with_instances(doc, polygon_objects)
+    doc.StartUndo()
+
+    # Collect all objects in the scene
+    all_objects = []
+    get_all_objects(doc.GetFirstObject(), all_objects)
+
+    duplicates = [obj for obj in all_objects if obj != selected and obj.CheckType(c4d.Opolygon) and objects_are_identical(selected, obj)]
+
+    if duplicates:
+        replace_with_instance(doc, selected, duplicates)
+        c4d.gui.MessageDialog(f"Found and replaced {len(duplicates)} objects.")
+    else:
+        c4d.gui.MessageDialog("No identical objects found.")
+
+    doc.EndUndo()
+    c4d.EventAdd()
 
 if __name__ == "__main__":
     main()
