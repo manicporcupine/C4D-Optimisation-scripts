@@ -1,3 +1,6 @@
+# Author: Chat GPT and Dani Zaitcev
+# Tested with Cinema 4D 2025.2 and Redshift 2025.4
+
 import c4d
 
 def select_all_instances(doc, target_obj):
