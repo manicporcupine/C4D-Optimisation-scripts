@@ -1,9 +1,12 @@
+# Author: Chat GPT and Dani Zaitcev
+# Tested with Cinema 4D 2025.2 
+
 import c4d
 
 def main():
     doc = c4d.documents.GetActiveDocument()
     selection = doc.GetActiveObjects(0)
-    
+
     if not selection or selection[0].GetType() != c4d.Oinstance:
         return
 
@@ -18,13 +21,17 @@ def main():
                 instances.append(obj)
             search(obj.GetDown())
             obj = obj.GetNext()
-    
+
     search(doc.GetFirstObject())
-    
+
     if instances:
-        doc.SetActiveObject(None, c4d.SELECTION_NEW)  # Deselect everything
+        # Clear current selection.
+        doc.SetActiveObject(None, c4d.SELECTION_NEW)
+        # First, add the master object.
+        doc.SetActiveObject(ref_obj, c4d.SELECTION_ADD)
+        # Then, add all matching instance objects.
         for inst in instances:
-            doc.SetActiveObject(inst, c4d.SELECTION_ADD)  # Select matching instances
+            doc.SetActiveObject(inst, c4d.SELECTION_ADD)
         c4d.EventAdd()
 
 if __name__ == "__main__":
