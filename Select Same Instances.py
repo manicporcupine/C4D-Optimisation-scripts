@@ -15,6 +15,7 @@ def main():
         return
 
     instances = []
+
     def search(obj):
         while obj:
             if obj.GetType() == c4d.Oinstance and obj[c4d.INSTANCEOBJECT_LINK] == ref_obj:
@@ -24,15 +25,11 @@ def main():
 
     search(doc.GetFirstObject())
 
-    if instances:
-        # Clear current selection.
-        doc.SetActiveObject(None, c4d.SELECTION_NEW)
-        # First, add the master object.
-        doc.SetActiveObject(ref_obj, c4d.SELECTION_ADD)
-        # Then, add all matching instance objects.
-        for inst in instances:
-            doc.SetActiveObject(inst, c4d.SELECTION_ADD)
-        c4d.EventAdd()
+    doc.SetActiveObject(None, c4d.SELECTION_NEW)
+    for inst in instances:
+        doc.SetActiveObject(inst, c4d.SELECTION_ADD)
+
+    c4d.EventAdd()
 
 if __name__ == "__main__":
     main()
