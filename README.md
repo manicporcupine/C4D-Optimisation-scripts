@@ -1,85 +1,101 @@
-# Cinema 4D Optimization Scripts
+# 🧰 Cinema 4D Optimization & Cleanup Scripts
 
-A collection of Cinema 4D optimization scripts developed with assistance from ChatGPT. These tools help clean and optimize your scenes by converting duplicate objects into instances, managing materials (including Redshift node-based materials), renaming objects, and cleaning scene hierarchies.
+A humble collection of tools for cleaning, optimizing, and organizing Cinema 4D scenes — especially useful when dealing with imported OBJ/FBX/STEP geometry or preparing scenes for export.
 
-They are especially useful when exporting heavy scenes to other applications or cleaning up imported files (e.g. STEP files).
-
----
-
-## Special Notes
-
-Some scripts address very specific problems, such as:
-
-- **Delete All Hidden Objects** – Ensures exported scenes don’t contain overlapping or unused geometry by removing all hidden objects.
-- **Delete Instances Inside Other Instances** – Removes nested instances (instances placed inside other instances), often found in imported STEP files.
+Developed with the help of ChatGPT.
 
 ---
 
-## Scripts
+## 🔄 Converting to instances:
 
-### 1. **Convert All Same Objects to Instances**
-Replaces all duplicate polygon objects with instances of the first found object that shares the same geometry (based on a geometry hash of points and polygons).
+### ✅ Advanced (Tolerance-based: more accurate, better for messy CAD data)
 
-### 2. **Convert Duplicates of Selected Object to Instances**
-Replaces all polygon objects that are identical to the currently selected object with instances of that object. Local/world transformations and hierarchy are preserved.
+- **Convert All Duplicates to Instances (Advanced).py**  
+  Converts *all* polygonal duplicates in the scene into instances using vertex-cloud comparison with adjustable tolerance. 
+  
+- **Convert Duplicates to Instances (Advanced).py**  
+  Converts only *duplicates of selected object(s)* into instances using the same advanced logic.
+  
+### ⚡ Fast (Hash-based: faster, best for clean C4D-generated models)
 
-### 3. **Delete Duplicate Redshift Materials**
-Detects and removes duplicate Redshift materials by analyzing node graph data. Works well with Redshift Open PBR materials. Texture tags are updated to reference the unique material.
-
-### 4. **Delete All Hidden Objects**
-Recursively removes objects hidden in the viewport or renderer. Useful when exporting scenes to eliminate invisible geometry.
-
-### 5. **Delete Empty Material Tags**
-Deletes material tags that are not assigned to any material, helping clean up the scene.
-
-### 6. **Delete Empty Nulls**
-Removes null objects with no children (recursively), reducing clutter in the Object Manager.
-
-### 7. **Delete Material Tags from Selected Objects**
-Removes all material tags from currently selected objects.
-
-### 8. **Delete Red Instances**
-Deletes broken or orphaned Redshift instances (instances with missing or invalid reference objects).
-
-### 9. **Delete Instances Inside Other Instances**
-Recursively finds and deletes instance objects that are placed inside other instance objects (common in STEP imports).
-
-### 10. **Move On Top**
-Moves the selected object(s) to the top of the Object Manager hierarchy without changing world position.
-
-### 11. **Move To Bottom**
-Moves the selected object(s) to the bottom of the Object Manager hierarchy while preserving world transforms.
-
-### 12. **Quick Rename**
-Opens a simple dialog to batch rename selected objects with prefix, suffix, or numbering options. Quicker than the built-in rename tool.
-
-### 13. **Rename Instance to Match Reference**
-Renames selected instance objects to match the name of their reference/master object, appending `_instance`.
-
-### 14. **Select Active Camera**
-Selects the active camera based on the currently active viewport (similar to 3ds Max).
-
-### 15. **Select Parent**
-Selects the parent of the currently selected object(s). If multiple selected objects share the same parent, only one instance of the parent is selected.
-
-### 16. **Select All Instances of Active Object**
-Selects all instance objects that reference the currently selected object (works like "Select Similar" in 3ds Max).
-
-### 17. **Select Same Instances**
-When one instance is selected, this selects all other instances that reference the same source object.
-
-### 18. **Set Parent & Put Into**
-Opens a dialog with two options:  
-- **Set Parent** – Stores the currently selected object as a parent.  
-- **Put Into** – Puts other selected objects under the stored parent, preserving world coordinates.
+- **Convert all Duplicates to Instances.py**  
+  Scene-wide conversion using fast geometry hash (point/polygon structure). Less tolerant to tiny differences, which are often caused by floating point issues during import from other apps.
+  
+- **Convert Duplicates to Instances.py**  
+  Converts only duplicates of selected object using fast hash matching.
 
 ---
 
-## Requirements
+## 🎨 Materials & Tags
 
-- **Cinema 4D** – Scripts tested with Cinema 4D 2025.x  
-- **Redshift** – Relevant scripts tested with Redshift 2025.x
+- **DELETE DUPLICATE REDSHIFT MATERIALS.py**  
+  Merges Redshift node materials with identical node graphs. Updates tags and deletes duplicates. Works with Open PBR and standard RS shaders.
+  
+- **Delete Empty Material Tags.py**  
+  Deletes unused texture tags from the scene.
 
-Some scripts are tailored for specific workflows (e.g., cleaning imported STEP files, preparing scenes for export, Redshift cleanup, etc.).
+- **Delete Material Tags from Selected Objects.py**  
+  Deletes all texture tags from selected objects.
 
-> These scripts were developed with the help of ChatGPT and are provided **“as is”** without warranty. Use them at your own risk.
+---
+
+## 🧼 Scene Cleanup
+
+- **Delete All Hidden Objects.py**  
+  Removes all objects hidden in viewport or renderer. Ensures export-ready geometry. Handles references inside hidden instances safely.
+
+- **Delete Red Instances.py**  
+  Deletes orphaned Redshift instance objects (those with no valid reference).
+
+- **Delete Empty Nulls.py**  
+  Deletes nulls that have no children.
+
+---
+
+## 🧠 Hierarchy & Parenting Tools
+
+- **MOVE ON TOP.py**  
+  Moves selected object(s) to the top of the Object Manager. Because sometimes you wanna keep 'em close.
+
+- **MOVE TO BOTTOM.py**  
+  Moves selected object(s) to the bottom of the Object Manager. 
+
+- **Set Parent & Put into.py**  
+  First button sets a parent; second button moves selected objects into that parent. No need to drag and drop into an already existing group across the scene tree.
+
+- **Select Parent.py**  
+  Selects the parent(s) of selected objects.
+
+---
+
+## 🧭 Object Selection Tools
+
+- **Select Active Camera.py**  
+  Selects the currently active camera in the viewport (like in 3ds Max).
+
+- **Select Same Instances.py**  
+  Selects all instance objects that reference the same master as the currently selected instance. *Does not select the master*.
+
+- **Select Instances.py**  
+  Selects both the selected object(s) and all instances that reference them. Works whether you select a master or one of its instances.
+
+---
+
+## ✍️ Naming & Renaming
+
+- **Rename Instance as Reference.py**  
+  Renames selected instances to match their reference object’s name + "_instance".
+
+- **Rename all Instances as Reference.py**  
+  Renames all instances in the scene to match their reference object’s name + "_instance".
+
+- **Quick Rename.py**  
+  Rename selected objects quickly with prefix, suffix, or auto-numbering. Faster than the built-in tool.
+
+---
+
+## 📦 Misc
+
+- **README.md**  
+  This file.
+
