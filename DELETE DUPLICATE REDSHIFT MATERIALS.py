@@ -20,17 +20,32 @@ def normalize_value(value):
         f = float(value)
         return f"{f:.4f}"
     except Exception:
-        # If value is a maxon.ColorA, format it accordingly
         if isinstance(value, maxon.ColorA):
             return f"ColorA({value.r:.4f},{value.g:.4f},{value.b:.4f},{value.a:.4f})"
         return str(value)
+
+def collect_ports(port_node, out_dict, prefix=""):
+    """
+    Recursively walks a GraphNode (which may be an input bundle or a port)
+    and, for each leaf port, records its ID and normalized effectivevalue.
+    """
+    children = port_node.GetChildren()
+    if not children:
+        try:
+            val = port_node.GetValue("effectivevalue")
+        except Exception:
+            val = "N/A"
+        out_dict[prefix + str(port_node.GetId())] = normalize_value(val)
+    else:
+        for child in children:
+            collect_ports(child, out_dict, prefix + str(port_node.GetId()) + ">")
 
 def get_normalized_material_data(material):
     """
     Collects node data from the material in a normalized dictionary.
     Each node dictionary contains:
       - "asset_id": the node's asset ID
-      - "ports": a dictionary mapping each port's identifier (using its ID) to its normalized effective value.
+      - "ports": a dictionary mapping each leaf-port's identifier (using its ID path) to its normalized effective value.
     The list of nodes is sorted by asset_id, and each node's ports dictionary is also sorted.
     """
     nodeMat = material.GetNodeMaterialReference()
@@ -42,24 +57,16 @@ def get_normalized_material_data(material):
     root = graph.GetViewRoot()
     nodes = []
     for node in root.GetInnerNodes(mask=maxon.NODE_KIND.NODE, includeThis=False):
-        assetId_list = node.GetValue("net.maxon.node.attribute.assetid")
-        if not assetId_list:
+        asset_id_list = node.GetValue("net.maxon.node.attribute.assetid")
+        if not asset_id_list:
             continue
-        node_data = {"asset_id": str(assetId_list[0]), "ports": {}}
+        node_data = {"asset_id": str(asset_id_list[0]), "ports": {}}
         inputs = node.GetInputs()
         if inputs:
-            for port in inputs.GetChildren():
-                try:
-                    val = port.GetValue("effectivevalue")
-                except Exception:
-                    val = "N/A"
-                node_data["ports"][str(port.GetId())] = normalize_value(val)
-        # Sort the ports dictionary by key to ensure determinism.
+            collect_ports(inputs, node_data["ports"])
         node_data["ports"] = dict(sorted(node_data["ports"].items()))
         nodes.append(node_data)
-    # Sort the list of nodes by asset_id.
-    nodes = sorted(nodes, key=lambda n: n["asset_id"])
-    return nodes
+    return sorted(nodes, key=lambda n: n["asset_id"])
 
 def get_normalized_material_signature(material):
     """
@@ -71,12 +78,12 @@ def get_normalized_material_signature(material):
     if nodes is None:
         return None, None
     nodes_json = json.dumps(nodes, sort_keys=True)
-    signature_hash = hashlib.sha256(nodes_json.encode('utf-8')).hexdigest()
-    return signature_hash, nodes_json
+    sig_hash = hashlib.sha256(nodes_json.encode('utf-8')).hexdigest()
+    return sig_hash, nodes_json
 
 def get_all_objects(doc):
     """
-    Recursively returns all objects in the document.
+    Recursively yields all objects in the document.
     """
     obj = doc.GetFirstObject()
     while obj:
@@ -87,13 +94,13 @@ def get_all_objects(doc):
 
 def get_all_children(obj):
     """
-    Recursively returns all children of the given object.
+    Recursively yields all children of the given object.
     """
     child = obj.GetDown()
     while child:
         yield child
-        for subchild in get_all_children(child):
-            yield subchild
+        for sub in get_all_children(child):
+            yield sub
         child = child.GetNext()
 
 def main():
@@ -101,70 +108,59 @@ def main():
     if doc is None:
         return
 
-    # 1. Collect all materials with Redshift node space
+    # 1. Collect all Redshift node-based materials
     materials = doc.GetMaterials()
-    redshift_materials = []
+    redshift_mats = []
     for mat in materials:
-        nodeMat = mat.GetNodeMaterialReference()
-        if nodeMat and nodeMat.HasSpace(RED_SHIFT_NODESPACE):
-            redshift_materials.append(mat)
-    
-    # 2. Calculate the normalized signature for each material and determine duplicates
-    sig_to_material = {}
+        nm = mat.GetNodeMaterialReference()
+        if nm and nm.HasSpace(RED_SHIFT_NODESPACE):
+            redshift_mats.append(mat)
+
+    # 2. Compute signatures and find duplicates
+    sig_map = {}
     duplicates = []
-    print("=== Debug: Normalized Material Data ===")
-    for mat in redshift_materials:
-        sig, nodes_json = get_normalized_material_signature(mat)
-        print("Material:", mat.GetName())
-        print("Signature:", sig)
-        print("Normalized Data:", nodes_json)
-        print("-----")
-        if sig in sig_to_material:
+    for mat in redshift_mats:
+        sig, _ = get_normalized_material_signature(mat)
+        if sig in sig_map:
             duplicates.append(mat)
         else:
-            sig_to_material[sig] = mat
-    
+            sig_map[sig] = mat
+
     if not duplicates:
         c4d.gui.MessageDialog("No duplicates found.")
         return
-    
-    print(f"Found {len(duplicates)} duplicates out of {len(redshift_materials)} materials.")
 
-    # 3. Update texture tags on objects: for each object, if a tag uses a duplicate material,
-    # replace it with the unique material (based on matching signature).
-    objects = list(get_all_objects(doc))
-    total = len(objects)
-    for idx, obj in enumerate(objects):
+    print(f"Found {len(duplicates)} duplicate materials out of {len(redshift_mats)}.")
+
+    # 3. Remap texture tags on all objects
+    objs = list(get_all_objects(doc))
+    total = len(objs)
+    for idx, obj in enumerate(objs):
         tag = obj.GetFirstTag()
         while tag:
             if tag.CheckType(c4d.Ttexture):
-                currentMat = tag[c4d.TEXTURETAG_MATERIAL]
-                if currentMat in duplicates:
-                    sig, _ = get_normalized_material_signature(currentMat)
-                    if sig in sig_to_material:
-                        uniqueMat = sig_to_material[sig]
-                        tag[c4d.TEXTURETAG_MATERIAL] = uniqueMat
-                        print(f"Tag on object '{obj.GetName()}' updated.")
+                cur = tag[c4d.TEXTURETAG_MATERIAL]
+                if cur in duplicates:
+                    sig, _ = get_normalized_material_signature(cur)
+                    keep = sig_map.get(sig)
+                    if keep:
+                        tag[c4d.TEXTURETAG_MATERIAL] = keep
             tag = tag.GetNext()
-        percent = int((idx + 1) * 100.0 / total)
-        c4d.StatusSetBar(percent)
+        pct = int((idx + 1) * 100.0 / total)
+        c4d.StatusSetBar(pct)
         c4d.StatusSetText(f"Processing object {idx+1} of {total}")
     c4d.StatusClear()
     c4d.EventAdd()
-    
-    # 4. Deselect all materials in the document
-    allMaterials = doc.GetMaterials()
-    for mat in allMaterials:
-        mat.DelBit(c4d.BIT_ACTIVE)
-    # Then select duplicate materials
+
+    # 4. Delete duplicate materials via Material Manager
+    for m in doc.GetMaterials():
+        m.DelBit(c4d.BIT_ACTIVE)
     for dup in duplicates:
         dup.SetBit(c4d.BIT_ACTIVE)
-    # Execute the delete command (ID 300001024) in the Material Manager
-    c4d.CallCommand(300001024)
+    c4d.CallCommand(300001024)  # Delete selected materials
     c4d.EventAdd()
-    
+
     c4d.gui.MessageDialog(f"{len(duplicates)} duplicate materials have been removed.")
 
-if __name__=='__main__':
+if __name__ == "__main__":
     main()
-
