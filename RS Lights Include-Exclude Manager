@@ -1,0 +1,182 @@
+import c4d
+from c4d import gui
+
+# Constant: Parameter ID for the RS light’s include/exclude list
+RS_LIGHT_OBJLIST_ID = c4d.REDSHIFT_LIGHT_EXCLUSION_LIST
+
+def add_object_to_rs_light(light, obj):
+    """
+    Adds 'obj' to 'light' include/exclude list with flags=7.
+    Skips if already present.
+    """
+    doc    = c4d.documents.GetActiveDocument()
+    descid = c4d.DescID(RS_LIGHT_OBJLIST_ID)
+    exData = light.GetParameter(descid, c4d.DESCFLAGS_GET_NONE) or c4d.InExcludeData()
+
+    # skip duplicates
+    if hasattr(exData, "GetObjectCount"):
+        for i in range(exData.GetObjectCount()):
+            if exData.ObjectFromIndex(doc, i) == obj:
+                return False
+
+    exData.InsertObject(obj, 7)  # flags=7 → light, shadow, children
+    light.SetParameter(descid, exData, c4d.DESCFLAGS_SET_NONE)
+    light.SetDirty(c4d.DIRTYFLAGS_DATA)
+    light.Message(c4d.MSG_UPDATE)
+    return True
+
+def remove_object_from_rs_light(light, obj):
+    """
+    Removes 'obj' from 'light' include/exclude list if present.
+    """
+    doc    = c4d.documents.GetActiveDocument()
+    descid = c4d.DescID(RS_LIGHT_OBJLIST_ID)
+    exData = light.GetParameter(descid, c4d.DESCFLAGS_GET_NONE)
+    if not exData:
+        return False
+
+    removed = False
+    if hasattr(exData, "RemoveObject"):
+        try:
+            exData.RemoveObject(obj)
+            removed = True
+        except:
+            removed = False
+    else:
+        # rebuild without obj
+        objs = []
+        for i in range(exData.GetObjectCount()):
+            o = exData.ObjectFromIndex(doc, i)
+            if o and o != obj:
+                objs.append(o)
+        newData = c4d.InExcludeData()
+        for o in objs:
+            newData.InsertObject(o, 7)
+        exData = newData
+        removed = True
+
+    if removed:
+        light.SetParameter(descid, exData, c4d.DESCFLAGS_SET_NONE)
+        light.SetDirty(c4d.DIRTYFLAGS_DATA)
+        light.Message(c4d.MSG_UPDATE)
+    return removed
+
+class RSIncludeExcludeDialog(gui.GeDialog):
+    IDC_LIST_LIGHTS      = 2000
+    IDC_BTN_ADD_LIGHTS   = 1000
+    IDC_BTN_CLEAR_LIST   = 1001
+    IDC_BTN_ADD_TO_LIST  = 1002
+    IDC_BTN_REMOVE_FROM  = 1003
+
+    def CreateLayout(self):
+        self.SetTitle("RS Light Include/Exclude Manager")
+
+        # Stored lights display
+        self.AddStaticText(self.IDC_LIST_LIGHTS, c4d.BFH_SCALEFIT, name="Stored RS Lights:")
+        self.AddMultiLineEditText(
+            self.IDC_LIST_LIGHTS+1,
+            c4d.BFH_SCALEFIT|c4d.BFV_SCALEFIT,
+            initw=300, inith=80
+        )
+
+        # <-- here’s the fix: cols=2, rows=1 -->
+        self.GroupBegin(1500, c4d.BFH_SCALEFIT, 2, 1)
+        self.AddButton(
+            self.IDC_BTN_ADD_LIGHTS,
+            c4d.BFH_SCALEFIT|c4d.BFV_CENTER,
+            name="Add RS Lights"
+        )
+        self.AddButton(
+            self.IDC_BTN_CLEAR_LIST,
+            c4d.BFH_SCALEFIT|c4d.BFV_CENTER,
+            name="Clear List"
+        )
+        self.GroupEnd()
+
+        # Big buttons below
+        self.AddButton(
+            self.IDC_BTN_ADD_TO_LIST,
+            c4d.BFH_SCALEFIT, name="Add to Include/Exclude List"
+        )
+        self.AddButton(
+            self.IDC_BTN_REMOVE_FROM,
+            c4d.BFH_SCALEFIT, name="Remove from Include/Exclude List"
+        )
+
+        self.selected_lights = []
+        return True
+
+    def InitValues(self):
+        self.selected_lights = []
+        self.SetString(self.IDC_LIST_LIGHTS+1, "")
+        return True
+
+    def Command(self, id, msg):
+        doc = c4d.documents.GetActiveDocument()
+
+        if id == self.IDC_BTN_ADD_LIGHTS:
+            sel = doc.GetActiveObjects(c4d.GETACTIVEOBJECTFLAGS_NONE)
+            added = 0
+            for o in sel:
+                if o.GetType() == c4d.Orslight and o not in self.selected_lights:
+                    self.selected_lights.append(o)
+                    added += 1
+            if added:
+                names = "\n".join(o.GetName() for o in self.selected_lights)
+                self.SetString(self.IDC_LIST_LIGHTS+1, names)
+            else:
+                gui.MessageDialog("No new RS lights to add.")
+            return True
+
+        if id == self.IDC_BTN_CLEAR_LIST:
+            self.selected_lights = []
+            self.SetString(self.IDC_LIST_LIGHTS+1, "")
+            return True
+
+        if id == self.IDC_BTN_ADD_TO_LIST:
+            objs = [o for o in doc.GetActiveObjects(c4d.GETACTIVEOBJECTFLAGS_NONE)
+                    if o.GetType() != c4d.Orslight]
+            if not self.selected_lights:
+                gui.MessageDialog("No RS lights stored. Use 'Add RS Lights'.")
+                return True
+            if not objs:
+                gui.MessageDialog("Select objects to add.")
+                return True
+            doc.StartUndo()
+            cnt = 0
+            for light in self.selected_lights:
+                for obj in objs:
+                    if add_object_to_rs_light(light, obj):
+                        doc.AddUndo(c4d.UNDOTYPE_CHANGE, light)
+                        cnt += 1
+            doc.EndUndo()
+            c4d.EventAdd()
+            gui.MessageDialog(f"Added {cnt} new link(s).")
+            return True
+
+        if id == self.IDC_BTN_REMOVE_FROM:
+            objs = [o for o in doc.GetActiveObjects(c4d.GETACTIVEOBJECTFLAGS_NONE)
+                    if o.GetType() != c4d.Orslight]
+            if not self.selected_lights:
+                gui.MessageDialog("No RS lights stored. Use 'Add RS Lights'.")
+                return True
+            if not objs:
+                gui.MessageDialog("Select objects to remove.")
+                return True
+            doc.StartUndo()
+            cnt = 0
+            for light in self.selected_lights:
+                for obj in objs:
+                    if remove_object_from_rs_light(light, obj):
+                        doc.AddUndo(c4d.UNDOTYPE_CHANGE, light)
+                        cnt += 1
+            doc.EndUndo()
+            c4d.EventAdd()
+            gui.MessageDialog(f"Removed {cnt} link(s).")
+            return True
+
+        return True
+
+if __name__ == "__main__":
+    dlg = RSIncludeExcludeDialog()
+    dlg.Open(c4d.DLG_TYPE_ASYNC, defaultw=420, defaulth=260)
