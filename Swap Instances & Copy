@@ -8,34 +8,33 @@ def Log(msg):
     """Simple logger to Python console."""
     print(msg)
 
-def collect_instances(op, instances):
-    """Recursively collect all Instance objects in the scene."""
-    while op:
-        if op.GetType() == c4d.Oinstance:
-            instances.append(op)
-        collect_instances(op.GetDown(), instances)
-        op = op.GetNext()
+def find_instances(root, result):
+    """Recursively gather all Instance objects under root."""
+    if not root:
+        return
+    if root.GetType() == c4d.Oinstance:
+        result.append(root)
+    child = root.GetDown()
+    while child:
+        find_instances(child, result)
+        child = child.GetNext()
 
 def get_original_master(inst):
     """Follow the INSTANCEOBJECT_LINK chain to the true master."""
+    if inst.GetType() != c4d.Oinstance:
+        return None
     visited = set()
     master = inst[c4d.INSTANCEOBJECT_LINK]
-    while master and master.GetType() == c4d.Oinstance:
-        if master in visited:
-            break
+    # guard for invalid links
+    if not isinstance(master, c4d.BaseObject):
+        return None
+    while master and master.GetType() == c4d.Oinstance and master not in visited:
         visited.add(master)
-        next_master = master[c4d.INSTANCEOBJECT_LINK]
-        if not next_master or next_master == master:
+        nxt = master[c4d.INSTANCEOBJECT_LINK]
+        if not isinstance(nxt, c4d.BaseObject) or nxt == master:
             break
-        master = next_master
+        master = nxt
     return master
-
-def get_all_descendants(op, out):
-    """Recursively collect all objects in the scene."""
-    while op:
-        out.append(op)
-        get_all_descendants(op.GetDown(), out)
-        op = op.GetNext()
 
 def deselect_all(doc):
     """Clear selection on all objects."""
@@ -46,50 +45,34 @@ def deselect_all(doc):
             op = op.GetNext()
     recurse(doc.GetFirstObject())
 
-def find_instances(root, result):
-    """Recursively gather all instance objects under root."""
-    if root.GetType() == c4d.Oinstance:
-        result.append(root)
-    child = root.GetDown()
-    while child:
-        find_instances(child, result)
-        child = child.GetNext()
-
-def get_top_level(roots):
-    """Return only those in roots without an ancestor also in roots."""
+def get_top_level(objs):
+    """Filter out objects whose ancestor is also in the list."""
     top = []
-    for r in roots:
-        par = r.GetUp()
+    for o in objs:
+        par = o.GetUp()
         skip = False
         while par:
-            if par in roots:
+            if par in objs:
                 skip = True
                 break
             par = par.GetUp()
         if not skip:
-            top.append(r)
+            top.append(o)
     return top
 
 class StatsDialog(gui.GeDialog):
     ID_OK = 1000
-
     def __init__(self, copied, relinked, swapped):
         super().__init__()
-        self.copied   = copied
-        self.relinked = relinked
-        self.swapped  = swapped
+        self.copied, self.relinked, self.swapped = copied, relinked, swapped
 
     def CreateLayout(self):
         self.SetTitle("Smart Copy Tool – Stats")
-        self.AddStaticText(1001, c4d.BFH_LEFT,
-            name=f"Objects copied: {self.copied}")
-        self.AddStaticText(1002, c4d.BFH_LEFT,
-            name=f"Instance chains removed): {self.relinked}")
-        self.AddStaticText(1003, c4d.BFH_LEFT,
-            name=f"Masters swapped: {self.swapped}")
+        self.AddStaticText(1001, c4d.BFH_LEFT, name=f"Objects copied: {self.copied}")
+        self.AddStaticText(1002, c4d.BFH_LEFT, name=f"Instance chains removed: {self.relinked}")
+        self.AddStaticText(1003, c4d.BFH_LEFT, name=f"Masters swapped: {self.swapped}")
         self.AddButton(self.ID_OK, c4d.BFH_CENTER, name="OK")
         return True
-
 
     def Command(self, id, msg):
         if id == self.ID_OK:
@@ -101,120 +84,139 @@ def main():
     if not doc:
         return
 
-    # --- Relink instances to true masters ---
-    all_instances = []
-    collect_instances(doc.GetFirstObject(), all_instances)
+    # 1) Relink all instances to their true masters
+    all_insts = []
+    find_instances(doc.GetFirstObject(), all_insts)
     relink_count = 0
-    if all_instances:
+    if all_insts:
         doc.StartUndo()
-        for inst in all_instances:
-            original = get_original_master(inst)
-            if original and original.GetType() != c4d.Oinstance:
+        for inst in all_insts:
+            master = get_original_master(inst)
+            if master:
                 current = inst[c4d.INSTANCEOBJECT_LINK]
-                if current != original:
+                if current != master:
                     doc.AddUndo(c4d.UNDOTYPE_CHANGE, inst)
-                    inst[c4d.INSTANCEOBJECT_LINK] = original
+                    inst[c4d.INSTANCEOBJECT_LINK] = master
                     relink_count += 1
         doc.EndUndo()
         c4d.EventAdd()
 
-    # --- Smart Copy flow ---
+    # 2) Get selection and top-level roots
     original = list(doc.GetSelection())
     top_roots = get_top_level(original)
     Log(f"Original selection: {[o.GetName() for o in original]}")
     Log(f"Top-level roots: {[o.GetName() for o in top_roots]}")
 
-    # Begin undo block for grouping & swapping
-    doc.StartUndo()
+    # 3) Gather all selected instances, including nested under non-instance roots
+    selected_insts = []
+    for root in original:
+        if root.GetType() == c4d.Oinstance:
+            selected_insts.append(root)
+        tmp = []
+        find_instances(root, tmp)
+        selected_insts.extend(tmp)
+    # unique
+    selected_insts = list(dict.fromkeys(selected_insts))
+    Log(f"Selected instances: {[o.GetName() for o in selected_insts]}")
 
-    # Group top-level roots under TempGroup, preserving world mats
-    crutch = c4d.BaseObject(c4d.Onull)
-    crutch.SetName("TempGroup")
-    doc.AddUndo(c4d.UNDOTYPE_NEW, crutch)
-    mg_roots = {r: r.GetMg() for r in top_roots}
-    if top_roots:
-        first = top_roots[0]
-        parent = first.GetUp()
-        doc.InsertObject(crutch, parent=parent, pred=first)
-        for root in top_roots:
-            doc.AddUndo(c4d.UNDOTYPE_CHANGE, root)
-            root.InsertUnder(crutch)
-            root.SetMg(mg_roots[root])
-
-    # Group nested instances with children
-    instances = []
-    find_instances(crutch, instances)
-    for inst in instances:
-        if not inst.GetDown():
+    # 4) Find Alekseis: instances under each master, deeper than first level
+    alekseis = []
+    for inst in selected_insts:
+        master = get_original_master(inst)
+        if not master:
             continue
-        mg_inst = inst.GetMg()
-        children = []
+        tmp = []
+        find_instances(master, tmp)
+        for desc in tmp:
+            # exclude direct first-level insts of this master
+            if desc.GetType() == c4d.Oinstance and desc[c4d.INSTANCEOBJECT_LINK] != master:
+                alekseis.append(desc)
+    # unique
+    alekseis = list(dict.fromkeys(alekseis))
+    Log(f"Алексеев найдено: {[o.GetName() for o in alekseis]}")
+
+    # 5) Smart Copy flow → prepare swap_info
+    doc.StartUndo()
+    # 5.1) Group top_roots under TempGroup
+    crutch = c4d.BaseObject(c4d.Onull); crutch.SetName("TempGroup")
+    doc.AddUndo(c4d.UNDOTYPE_NEW, crutch)
+    mg_map = {o: o.GetMg() for o in top_roots}
+    if top_roots:
+        first = top_roots[0]; parent = first.GetUp()
+        doc.InsertObject(crutch, parent=parent, pred=first)
+        for o in top_roots:
+            doc.AddUndo(c4d.UNDOTYPE_CHANGE, o)
+            o.InsertUnder(crutch); o.SetMg(mg_map[o])
+
+    # 5.2) Create intermediate groups for instances with children
+    under = []; find_instances(crutch, under)
+    for inst in under:
+        if not inst.GetDown(): continue
+        mg = inst.GetMg(); kids = []
         ch = inst.GetDown()
         while ch:
-            children.append(ch)
-            ch = ch.GetNext()
-        grp = c4d.BaseObject(c4d.Onull)
-        grp.SetName(f"Group_{inst.GetName()}")
+            kids.append(ch); ch = ch.GetNext()
+        grp = c4d.BaseObject(c4d.Onull); grp.SetName(f"Group_{inst.GetName()}")
         doc.AddUndo(c4d.UNDOTYPE_NEW, grp)
-        parent = inst.GetUp()
-        doc.InsertObject(grp, parent=parent, pred=inst)
-        grp.SetMg(mg_inst)
+        par = inst.GetUp(); doc.InsertObject(grp, parent=par, pred=inst)
+        grp.SetMg(mg)
         doc.AddUndo(c4d.UNDOTYPE_CHANGE, inst)
-        inst.InsertUnder(grp); inst.SetMg(mg_inst)
-        for ch in children:
+        inst.InsertUnder(grp); inst.SetMg(mg)
+        for ch in kids:
             doc.AddUndo(c4d.UNDOTYPE_CHANGE, ch)
             ch.InsertUnder(grp); ch.SetMg(ch.GetMg())
 
-    # Prepare swap info
+    # 5.3) Prepare swap_info for all under TempGroup
     swap_info = []
-    instances = []
-    find_instances(crutch, instances)
-    for inst in instances:
-        parent = inst.GetUp()
-        idx = 0
-        sib = parent.GetDown() if parent else doc.GetFirstObject()
+    under = []; find_instances(crutch, under)
+    for inst in under:
+        par = inst.GetUp(); idx = 0
+        sib = par.GetDown() if par else doc.GetFirstObject()
         while sib and sib is not inst:
-            idx += 1
-            sib = sib.GetNext()
-        swap_info.append((inst, parent, idx, inst.GetMg()))
+            idx += 1; sib = sib.GetNext()
+        swap_info.append((inst, par, idx, inst.GetMg()))
+
+    # 5.4) Add Alekseis to swap_info
+    for inst in alekseis:
+        par = inst.GetUp(); idx = 0
+        sib = par.GetDown() if par else doc.GetFirstObject()
+        while sib and sib is not inst:
+            idx += 1; sib = sib.GetNext()
+        swap_info.append((inst, par, idx, inst.GetMg()))
+
+    Log(f"Алексеев свапнуто: {[o.GetName() for o in alekseis]}")
     swap_count = len(swap_info)
 
-    # Swap and restore world mats
-    for inst, parent, idx, mg in swap_info:
+    # 5.5) Perform swaps
+    for inst, par, idx, mg in swap_info:
         c4d.CallButton(inst, c4d.INSTANCEOBJECT_SWAP)
-        new_obj = parent.GetDown() if parent else doc.GetFirstObject()
+        new_obj = par.GetDown() if par else doc.GetFirstObject()
         for _ in range(idx):
             if new_obj: new_obj = new_obj.GetNext()
         if new_obj: new_obj.SetMg(mg)
 
     doc.EndUndo()
 
-    # Build copy targets: direct children of TempGroup
+    # 6) Copy TempGroup children
     copy_targets = []
-    child = crutch.GetDown()
-    while child:
-        copy_targets.append(child)
-        child = child.GetNext()
+    ch = crutch.GetDown()
+    while ch:
+        copy_targets.append(ch); ch = ch.GetNext()
     copied_count = len(copy_targets)
 
-    # Copy to clipboard
     deselect_all(doc)
-    for o in copy_targets:
-        o.SetBit(c4d.BIT_ACTIVE)
+    for o in copy_targets: o.SetBit(c4d.BIT_ACTIVE)
     c4d.CallCommand(100004820)
 
-    # Undo grouping & swaps
+    # 7) Undo helpers & restore selection
     c4d.CallCommand(12105)
-
-    # Restore original top-level selection
     deselect_all(doc)
-    for root in top_roots:
-        root.SetBit(c4d.BIT_ACTIVE)
+    for o in top_roots: o.SetBit(c4d.BIT_ACTIVE)
     c4d.EventAdd()
 
-    # Show statistics
+    # 8) Show stats
     dlg = StatsDialog(copied_count, relink_count, swap_count)
     dlg.Open(c4d.DLG_TYPE_MODAL, defaultw=300, defaulth=100)
 
-if __name__=='__main__':
+if __name__ == '__main__':
     main()
