@@ -8,21 +8,14 @@ Developed with the help of ChatGPT.
 
 ## 🔄 Converting to instances:
 
-### ✅ Advanced (Tolerance-based: more accurate, better for messy CAD data)
+- **Convert Duplicates to Instances (via Point Cloud).py**  
+  Converts only *duplicates of selected object(s)* into instances using vertex cloud comparison. Best chioce for messy CAD models.
 
-- **Convert All Duplicates to Instances (Advanced).py**  
-  Converts *all* polygonal duplicates in the scene into instances using vertex-cloud comparison with adjustable tolerance. 
-  
-- **Convert Duplicates to Instances (Advanced).py**  
-  Converts only *duplicates of selected object(s)* into instances using the same advanced logic.
-  
-### ⚡ Fast (Hash-based: faster, best for clean C4D-generated models)
-
-- **Convert all Duplicates to Instances.py**  
-  Scene-wide conversion using fast geometry hash (point/polygon structure). Less tolerant to tiny differences, which are often caused by floating point issues during import from other apps.
-  
 - **Convert Duplicates to Instances.py**  
-  Converts only duplicates of selected object using fast hash matching.
+  Converts duplicates of selected object to instances using fast hash matching.
+
+- **Swap Instances and Copy.py**  
+  Copies selected objects to a new file without losing instances.
 
 ---
 
@@ -30,7 +23,7 @@ Developed with the help of ChatGPT.
 
 - **DELETE DUPLICATE REDSHIFT MATERIALS.py**  
   Merges Redshift node materials with identical node graphs. Updates tags and deletes duplicates. Works with Open PBR and standard RS shaders.
-  
+
 - **Delete Empty Material Tags.py**  
   Deletes unused texture tags from the scene.
 
@@ -42,7 +35,7 @@ Developed with the help of ChatGPT.
 ## 🧼 Scene Cleanup
 
 - **Delete All Hidden Objects.py**  
-  Removes all objects hidden in viewport or renderer. Ensures export-ready geometry. Handles references inside hidden instances safely.
+  Removes all objects hidden in viewport or renderer. Ensures export-ready geometry. Doesn't delete anything linked to an instance.
 
 - **Delete Red Instances.py**  
   Deletes orphaned Redshift instance objects (those with no valid reference).
@@ -58,7 +51,7 @@ Developed with the help of ChatGPT.
   Moves selected object(s) to the top of the Object Manager. Because sometimes you wanna keep 'em close.
 
 - **MOVE TO BOTTOM.py**  
-  Moves selected object(s) to the bottom of the Object Manager. 
+  Moves selected object(s) to the bottom of the Object Manager.
 
 - **Set Parent & Put into.py**  
   First button sets a parent; second button moves selected objects into that parent. No need to drag and drop into an already existing group across the scene tree.
@@ -79,6 +72,12 @@ Developed with the help of ChatGPT.
 - **Select Instances.py**  
   Selects both the selected object(s) and all instances that reference them. Works whether you select a master or one of its instances.
 
+- **Select Duplicates.py**  
+  (Also listed under Converting to instances—this can be used purely to pick out duplicates before conversion.)
+
+- **Select Duplicates via Point Cloud.py**  
+  (Also listed under Converting to instances—this is ideal for CAD imports where exact hash matching might fail.)
+
 ---
 
 ## ✍️ Naming & Renaming
@@ -96,6 +95,13 @@ Developed with the help of ChatGPT.
 
 ## 📦 Misc
 
+- **Align Axis Rotation to World.py**  
+  Realigns the pivot axis of selected objects to match world axes, fixing axis misalignments that occur after importing from other applications.
+
+- **RS Lights Include-Exclude Manager.py**  
+  Provides a dialog for adding or removing multiple objects from Redshift lights’ include/exclude lists at once, and remembers your selections until the window is closed.
+
 - **README.md**  
   This file.
 
+---
