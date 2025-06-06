@@ -103,5 +103,40 @@ Developed with the help of ChatGPT.
 
 - **README.md**  
   This file.
+  
+
+## 🚀 Installation
+
+1. **Locate your Cinema 4D scripts folder**
+
+   * **Windows:**
+     ```
+     C:\Users\<YourUsername>\AppData\Roaming\Maxon\<C4D_Version>\scripts\
+     ```
+   * **macOS:**
+     ```
+     ~/Library/Preferences/Maxon/<C4D_Version>/scripts/
+     ```
+
+2. **Copy the `.py` files**
+
+   * Place each script (e.g., `Convert Duplicates to Instances.py`, `Align Axis Rotation to World.py`, etc.) into the `scripts/` directory.
+   * You can organize them into subfolders (e.g., `Cleanup/`, `Hierarchy/`, `Misc/`)—Cinema 4D will detect any `.py` files recursively.
+
+3. **Restart Cinema 4D**
+
+   * After copying, close and reopen Cinema 4D so that it indexes the new scripts.
+
+4. **Accessing the Scripts**
+
+   * Go to **Extensions → User Scripts** in the main menu.
+   * You should see each script listed by filename and be able to run them.
+
+5. **(Optional) Create Custom Menus or Toolbars**
+
+   * In **Customize → Customize Commands**, search for your script’s name and drag it into a menu, palette, or toolbar.
+   * You can also assign a shortcut key for quick access.
+
+That’s it—your cleanup and optimization tools are now installed and ready to use!
 
 ---
